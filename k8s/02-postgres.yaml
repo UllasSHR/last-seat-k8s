@@ -1,0 +1,73 @@
+# Step 2: Postgres as a StatefulSet with its own disk.
+#
+# Why not a Deployment? Deployment pods are interchangeable cattle with random
+# names and no disk of their own. A database needs:
+#   - a stable identity: the pod is always called postgres-0
+#   - its own storage that outlives the pod (volumeClaimTemplates below)
+
+# Local lab only: a throwaway password. Real clusters never commit secrets.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-auth
+stringData:
+  POSTGRES_PASSWORD: lab-only-password
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_DB
+              value: last_seat_lab
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-auth
+                  key: POSTGRES_PASSWORD
+            - name: PGDATA                  # keep data in a subfolder of the volume
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+          readinessProbe:                   # "only send traffic once Postgres answers"
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 3
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  # Each pod gets its own PersistentVolumeClaim (a request for disk).
+  # postgres-0 gets "data-postgres-0". Deleting the pod does NOT delete this.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  clusterIP: None     # "headless": gives postgres-0 a stable DNS name
+  selector:
+    app: postgres
+  ports:
+    - port: 5432

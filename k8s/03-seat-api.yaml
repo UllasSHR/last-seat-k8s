@@ -1,0 +1,49 @@
+# Step 3: three copies of YOUR seat-api, all talking to the same postgres-0.
+#
+# Stateless servers -> Deployment (any copy can die and be replaced; the only
+# state that matters lives in Postgres).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seat-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: seat-api
+  template:
+    metadata:
+      labels:
+        app: seat-api
+    spec:
+      containers:
+        - name: seat-api
+          image: seat-api:dev
+          # The image lives only on your Mac and was copied into the kind node
+          # with `kind load`. "Never" = don't try to download it from Docker Hub.
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-auth
+                  key: POSTGRES_PASSWORD
+          readinessProbe:          # only send traffic once the server answers
+            httpGet:
+              path: /healthz
+              port: 3000
+            periodSeconds: 2
+---
+# One stable name, "seat-api", spreading requests across all 3 copies.
+apiVersion: v1
+kind: Service
+metadata:
+  name: seat-api
+spec:
+  selector:
+    app: seat-api
+  ports:
+    - port: 80
+      targetPort: 3000

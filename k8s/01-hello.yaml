@@ -1,0 +1,38 @@
+# Step 1: your first Deployment.
+#
+# You are NOT saying "start a server". You are writing a record into etcd:
+# "there should always be `replicas` copies of this pod". A controller then
+# works forever to make reality match this record.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+spec:
+  replicas: 3                # desired state. Change to 3 later and re-apply.
+  selector:
+    matchLabels:
+      app: hello              # "the pods I own are the ones labelled app=hello"
+  template:                   # the blueprint for each pod it creates
+    metadata:
+      labels:
+        app: hello
+    spec:
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.10   # tiny server that replies with its own pod name
+          ports:
+            - containerPort: 80
+---
+# A Service gives the pods ONE stable name ("hello") and spreads requests
+# across whichever pods currently carry the label app=hello. Pods come and
+# go with new IPs; the Service name never changes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello
+spec:
+  selector:
+    app: hello
+  ports:
+    - port: 80
+      targetPort: 80

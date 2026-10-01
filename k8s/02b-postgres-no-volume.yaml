@@ -1,0 +1,32 @@
+# Step 2 control experiment: the SAME Postgres, but as a Deployment with no
+# volume. Data lives only inside the container's own filesystem, so it dies
+# with the pod. Kubernetes will happily "heal" this pod back to life... empty.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-ephemeral
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-ephemeral
+  template:
+    metadata:
+      labels:
+        app: postgres-ephemeral
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_DB
+              value: last_seat_lab
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-auth
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            periodSeconds: 3
