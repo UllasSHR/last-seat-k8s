@@ -56,7 +56,8 @@ is correct. Durability comes from the disk and the database, not Kubernetes.
 
 ## What surprised me
 
-<!-- write this part yourself -->
+I never knew Kubernetes manages servers for you, so that was nice. And the disk
+thing was nice: the data is stored on the disk rather than dying with the pods.
 
 ## Next question
 
