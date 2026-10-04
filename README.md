@@ -59,3 +59,7 @@ Server settings for experiments, set with `kubectl set env deploy/seat-api`:
 
 The Postgres password in `k8s/02-postgres.yaml` is a throwaway value for a
 local cluster. Never commit real secrets.
+
+## License
+
+Released under the Apache License 2.0. See [LICENSE](LICENSE).
