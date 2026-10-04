@@ -76,6 +76,44 @@ A crash before the write and a crash after the write look identical from
 outside. Kubernetes restarted everything perfectly, Postgres stored everything
 perfectly, and the user still got the wrong answer.
 
+## Review: what a Service is (in my words)
+
+A Service spreads requests across all the pods. It is a Kubernetes feature
+(not kind-specific), and it is also a stable name: `seat-api` stayed the same
+while I killed pod `ntcbl` and its IP `10.244.0.7` was replaced by a new pod at
+`10.244.0.10` in `kubectl get endpoints seat-api`. The Service's list is every
+Ready pod with the label `app=seat-api`, kept up to date automatically.
+
+## Review: watching the row lock (hop 4)
+
+Alice ran `BEGIN; UPDATE ... IS NULL; pg_sleep(10); COMMIT/ROLLBACK`, holding
+the A1 row lock for 10 s. At 2 s, bob ran something else:
+
+| At 2s, bob runs... | Waited? | Bob's result |
+|---|---|---|
+| `UPDATE ... IS NULL`, alice commits | 8.3 s | `UPDATE 0` |
+| `UPDATE ... IS NULL`, alice rolls back | 8.2 s | `UPDATE 1` |
+| `SELECT` | 0.1 s | empty seat |
+
+- An `UPDATE` waits for the row lock, then re-checks its `WHERE` against the
+  latest committed row. That's why my safe code has exactly one winner.
+- Bob waits even when alice will roll back: Postgres can't know the future.
+- A `SELECT` never waits for writers. It shows the last committed version, so
+  bob saw "free" while alice was mid-booking. That is the naive bug, isolated:
+  the `SELECT` answer is already stale, and the later `UPDATE` (no `IS NULL`)
+  never re-checks.
+
+## Review: the crash (scenario 3), in my words
+
+The pod is the connection to the `reserveSafe()` code: it runs it and carries
+messages between the user and Postgres. Once the transaction is committed in
+Postgres, it doesn't matter if the pod dies; the booking is permanent.
+
+What the crash destroys is the reply. The booking lived in Postgres (safe);
+the "you won" message lived only inside the pod (lost). I first mixed this up
+with bob's stale `SELECT`: user-2 did NOT see an empty seat, they saw an error,
+and they DID own A1.
+
 ## What surprised me
 
 <!-- write this part yourself -->

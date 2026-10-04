@@ -29,7 +29,7 @@ const db = new pg.Pool({
 //   - result.rowCount tells you how many rows the UPDATE changed.
 // ---------------------------------------------------------------------------
 async function reserveSafe(name) {
-  const result = await db.query("UPDATE seats SET reserved_by = $1 WHERE seat_code = 'A1' AND reserved_by IS NULL", [name]);
+  const result = await db.query("UPDATE seats SET reserved_by = $1 WHERE seat_code = 'A1' AND (reserved_by IS NULL OR reserved_by = $1)", [name]);
   return result.rowCount > 0;
 }
 

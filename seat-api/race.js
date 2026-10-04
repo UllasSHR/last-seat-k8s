@@ -2,26 +2,41 @@
 // Runs INSIDE the cluster and talks to the "seat-api" Service, so Kubernetes
 // spreads the requests across all 3 seat-api pods.
 //
-// Usage: node race.js <safe|naive> [people]
+// Usage: node race.js <safe|naive> [people] [retry]
+//   retry: on an error, the user waits 1 s and clicks Book again (up to 20x)
 const mode = process.argv[2] ?? "safe";
 const people = Number(process.argv[3] ?? 200);
+const retry = process.argv[4] === "retry";
 const API = process.env.API ?? "http://seat-api";
 
 await fetch(`${API}/reset`, { method: "POST" });
-console.log(`Seat A1 reset. ${people} people booking at once, mode=${mode}\n`);
+console.log(
+  `Seat A1 reset. ${people} people booking at once, mode=${mode}, retry=${retry}\n`,
+);
+
+async function book(name) {
+  try {
+    const res = await fetch(`${API}/reserve?name=${name}&mode=${mode}`, {
+      method: "POST",
+    });
+    return { name, ...(await res.json()) };
+  } catch (err) {
+    return { name, error: err.cause?.code ?? err.message };
+  }
+}
 
 // Fire every request at the same time, then wait for all of them.
 const results = await Promise.all(
   Array.from({ length: people }, async (_, i) => {
     const name = `user-${i}`;
-    try {
-      const res = await fetch(`${API}/reserve?name=${name}&mode=${mode}`, {
-        method: "POST",
-      });
-      return { name, ...(await res.json()) };
-    } catch (err) {
-      return { name, error: err.cause?.code ?? err.message };
+    let result = await book(name);
+    let attempts = 1;
+    while (retry && result.error && attempts < 20) {
+      await new Promise((r) => setTimeout(r, 1000)); // wait, then click again
+      result = await book(name);
+      attempts++;
     }
+    return { ...result, attempts };
   }),
 );
 
@@ -48,6 +63,8 @@ console.log(`\nPeople told "you got the seat!": ${winners.length}`);
 for (const w of winners.slice(0, 10)) console.log(`  ${w.name} (via ${w.pod})`);
 if (winners.length > 10) console.log(`  ...and ${winners.length - 10} more`);
 console.log(`Errors: ${errors.length}`);
+const retried = results.filter((r) => r.attempts > 1).length;
+if (retry) console.log(`People who had to retry: ${retried}`);
 for (const e of errors.slice(0, 5)) console.log(`  ${e.name}: ${e.error}`);
 const owner = seat.seat.reserved_by;
 console.log(`\nWhat Postgres actually says: A1 -> ${owner}`);
@@ -60,5 +77,7 @@ if (ownerResult) {
     : ownerResult.won
       ? `"you got the seat!"`
       : `"sorry, seat taken"`;
-  console.log(`What ${owner} saw on their screen: ${saw}`);
+  console.log(
+    `What ${owner} saw on their screen: ${saw} (after ${ownerResult.attempts} attempt(s))`,
+  );
 }
